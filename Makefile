@@ -1,2 +1,2 @@
 all:
-	g++ main.cpp -o lqr_test
+	g++ -I ~/eigen/ main.cpp lqr.cpp -o lqr_test
