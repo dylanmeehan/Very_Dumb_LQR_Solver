@@ -2,8 +2,6 @@
 
 #include <Eigen/Dense>
 
-#define RICCATI(S) S*A + A_T*S - S*B*R_inv*B_T*S+Q
-
 class LqrSolution{
   public:
     template<typename T, int x_dim, int u_dim>
@@ -17,6 +15,16 @@ class LqrSolution{
     
     template<typename T, int x_dim>
     static T SumOfSquaresOfMatrixEntries(const Eigen::Matrix<T,x_dim,x_dim> &M);
+
+    template<typename T, int x_dim, int u_dim>
+    static Eigen::Matrix<T,x_dim,x_dim> Riccati(
+                    const Eigen::Matrix<T, x_dim, x_dim> &S,
+                    const Eigen::Matrix<T, x_dim, x_dim> &A,
+                    const Eigen::Matrix<T, x_dim, u_dim> &B,
+                    const Eigen::Matrix<T, u_dim, u_dim> &R_inv,
+                    const Eigen::Matrix<T, x_dim, x_dim>& Q){
+                        return S * A + A.transpose() * S - S * B * R_inv * B.transpose() * S + Q;
+                    }
 };
 
 
@@ -35,46 +43,40 @@ T LqrSolution::SumOfSquaresOfMatrixEntries(const Eigen::Matrix<T,x_dim,x_dim> &M
 template<typename T, int x_dim, int u_dim>
 bool LqrSolution::Solve( Eigen::Matrix<T, u_dim, x_dim> &K,
                         Eigen::Matrix<T, x_dim, x_dim> &S,
-                        Eigen::Matrix<T, x_dim, x_dim> &Riccati,
+                        Eigen::Matrix<T, x_dim, x_dim> &Ricc,
                         const Eigen::Matrix<T, x_dim, x_dim> &A,
                         const Eigen::Matrix<T, x_dim, u_dim> &B,
                         const Eigen::Matrix<T, x_dim, x_dim> &Q,
                         const Eigen::Matrix<T, u_dim, u_dim> &R){
 
     // initialize everything before loop
-    for (int i = 0; i < u_dim; i++){
-        for (int j = 0; j < x_dim; j++){
-            K(i,j) = static_cast<T>(1);
-        }
-    }
-    for (int i = 0; i < x_dim; i++){
-        for (int j = 0; j < x_dim; j++){
-            S(i,j) = static_cast<T>(1);
-        }
-    }
-
+    K.setOnes();
+    S.setIdentity();
     Eigen::Matrix<T, u_dim, u_dim> R_inv = R.inverse();
     Eigen::Matrix<T, x_dim, x_dim> A_T = A.transpose();
     Eigen::Matrix<T, u_dim, x_dim> B_T = B.transpose();
 
-    int i = 1;
-    int j = 1;
+
     float delta = 1e-3;
     float epsilon = 1e-6;
-    int last_i_with_change = i;
-    int last_j_with_change = j;
+    int max_iterations = 100000;
     bool printout = 0;
 
+    int i = 1;
+    int j = 1;
+    int last_i_with_change = i;
+    int last_j_with_change = j;
     Eigen::Matrix<T,x_dim,x_dim> S_test;
-    int N = 0;
-    while (N < 10){
+    int iteration_count = 0;
+
+    while (iteration_count < max_iterations){
 
         bool has_checked_bigger = 0;
         bool S_ij_changed = 0;
         while(true){
 
             T S_ij_current_point = S(i,j);
-            Eigen::Matrix<T,x_dim, x_dim> Riccati_current = RICCATI(S);
+            Eigen::Matrix<T,x_dim, x_dim> Riccati_current = Riccati<T,x_dim,u_dim>(S,A,B,R_inv,Q);
             T objective_function_current = SumOfSquaresOfMatrixEntries<T,x_dim>(Riccati_current);       
 
             S_test = S;
@@ -84,7 +86,7 @@ bool LqrSolution::Solve( Eigen::Matrix<T, u_dim, x_dim> &K,
                 S_test(i,j) = S(i,j) - delta;
             }
 
-            Eigen::Matrix<T,x_dim, x_dim> Riccati_test = RICCATI(S_test);
+            Eigen::Matrix<T,x_dim, x_dim> Riccati_test = Riccati<T,x_dim,u_dim>(S_test,A,B,R_inv,Q);
             T objective_function_test = SumOfSquaresOfMatrixEntries<T,x_dim>(Riccati_test);
 
             if (printout){
@@ -135,14 +137,11 @@ bool LqrSolution::Solve( Eigen::Matrix<T, u_dim, x_dim> &K,
             }
         }
 
-
-        // N++;
-
-        // std::cout << "Riccati " << std::endl << Riccati << std::endl;
+        iteration_count++;
 
     }
 
-    Riccati = RICCATI(S);
+    Ricc = Riccati<T,x_dim,u_dim>(S,A,B,R_inv,Q);
     K = R_inv*B_T*S;
 
     return true;

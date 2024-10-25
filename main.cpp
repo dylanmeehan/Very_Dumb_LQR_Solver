@@ -17,7 +17,7 @@ int main(){
     Eigen::Matrix<float, x_dim, x_dim> S; 
     Eigen::Matrix<float, x_dim, x_dim> Riccati;
 
-    bool success = LqrSolution::Solve(K,S,Riccati,A,B,Q,R);
+    bool success = LqrSolution::Solve<float, x_dim, u_dim>(K,S,Riccati,A,B,Q,R);
 
     std::cout << "Riccati = " <<std::endl << Riccati << std::endl; 
     std::cout << "S = " << std::endl << S << std::endl;
