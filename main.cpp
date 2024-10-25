@@ -4,18 +4,22 @@
 
 int main(){
 
-    std::cout << "Hi" << std::endl;
+    const int x_dim = 2;
+    const int u_dim = 1;
 
-    Eigen::Vector2d K;
-    Eigen::Matrix2d S;
-    Eigen::Matrix2d A {{0.0,1.0},
-                       {0.0,0.0}};
-    Eigen::Vector2d B {0.0, 1.0};
-    Eigen::Matrix2d Q {{1.0,0.0},{0.0,1.0}};
-    float R = 1.0;
+    Eigen::Matrix<float, x_dim, x_dim> A {{0.0,1.0},
+                                        {0.0,0.0}};
+    Eigen::Matrix<float, x_dim, u_dim> B {0.0, 1.0};
+    Eigen::Matrix<float, x_dim, x_dim> Q {{1.0,0.0},{0.0,1.0}};
+    Eigen::Matrix<float, u_dim, u_dim> R {1.0};
 
-    bool success = LqrSolution::Solve(K,S,A,B,Q,R);
+    Eigen::Matrix<float, u_dim, x_dim> K;
+    Eigen::Matrix<float, x_dim, x_dim> S; 
+    Eigen::Matrix<float, x_dim, x_dim> Riccati;
 
+    bool success = LqrSolution::Solve(K,S,Riccati,A,B,Q,R);
+
+    std::cout << "Riccati = " <<std::endl << Riccati << std::endl; 
     std::cout << "S = " << std::endl << S << std::endl;
     std::cout << "K = " << std::endl << K << std::endl;
 
