@@ -11,10 +11,14 @@ class LqrSolution{
                         const Eigen::Matrix<T, x_dim, x_dim> &A,
                         const Eigen::Matrix<T, x_dim, u_dim> &B,
                         const Eigen::Matrix<T, x_dim, x_dim> &Q,
-                        const Eigen::Matrix<T, u_dim, u_dim> &R);
+                        const Eigen::Matrix<T, u_dim, u_dim> &R,
+                        float delta, float epsilon);
     
     template<typename T, int x_dim>
     static T SumOfSquaresOfMatrixEntries(const Eigen::Matrix<T,x_dim,x_dim> &M);
+
+    template<typename T, int x_dim>
+    static T PenalizeNegativeEigenvalues(const Eigen::Matrix<T,x_dim,x_dim> &S);
 
     template<typename T, int x_dim, int u_dim>
     static Eigen::Matrix<T,x_dim,x_dim> Riccati(
@@ -22,11 +26,10 @@ class LqrSolution{
                     const Eigen::Matrix<T, x_dim, x_dim> &A,
                     const Eigen::Matrix<T, x_dim, u_dim> &B,
                     const Eigen::Matrix<T, u_dim, u_dim> &R_inv,
-                    const Eigen::Matrix<T, x_dim, x_dim>& Q){
+                    const Eigen::Matrix<T, x_dim, x_dim> &Q){
                         return S * A + A.transpose() * S - S * B * R_inv * B.transpose() * S + Q;
                     }
 };
-
 
 template<typename T, int x_dim>
 T LqrSolution::SumOfSquaresOfMatrixEntries(const Eigen::Matrix<T,x_dim,x_dim> &M){
@@ -47,102 +50,142 @@ bool LqrSolution::Solve( Eigen::Matrix<T, u_dim, x_dim> &K,
                         const Eigen::Matrix<T, x_dim, x_dim> &A,
                         const Eigen::Matrix<T, x_dim, u_dim> &B,
                         const Eigen::Matrix<T, x_dim, x_dim> &Q,
-                        const Eigen::Matrix<T, u_dim, u_dim> &R){
+                        const Eigen::Matrix<T, u_dim, u_dim> &R,
+                        float delta, float epsilon){
 
     // initialize everything before loop
     K.setOnes();
-    S.setIdentity();
+    
     Eigen::Matrix<T, u_dim, u_dim> R_inv = R.inverse();
     Eigen::Matrix<T, x_dim, x_dim> A_T = A.transpose();
     Eigen::Matrix<T, u_dim, x_dim> B_T = B.transpose();
 
-
-    float delta = 1e-3;
-    float epsilon = 1e-6;
     int max_iterations = 100000;
     bool printout = 0;
+    int iteration_count = 0;    
+    bool solution_found = 0;
+    int initial_guess = 1;
+    int max_guesses = 5;
 
-    int i = 1;
-    int j = 1;
-    int last_i_with_change = i;
-    int last_j_with_change = j;
-    Eigen::Matrix<T,x_dim,x_dim> S_test;
-    int iteration_count = 0;
+    while (initial_guess < max_guesses) { //
+        S.setIdentity();
+        S = S*initial_guess; // [1 ... 5]
+        
+        int i = 0;
+        int j = 0;
+        int last_i_with_change = i;
+        int last_j_with_change = j;
+        Eigen::Matrix<T,x_dim,x_dim> S_test;
 
-    while (iteration_count < max_iterations){
+        std::cout << "trying with S = " << S << std::endl;
 
-        bool has_checked_bigger = 0;
-        bool S_ij_changed = 0;
-        while(true){
+        while (iteration_count < max_iterations){
 
-            T S_ij_current_point = S(i,j);
-            Eigen::Matrix<T,x_dim, x_dim> Riccati_current = Riccati<T,x_dim,u_dim>(S,A,B,R_inv,Q);
-            T objective_function_current = SumOfSquaresOfMatrixEntries<T,x_dim>(Riccati_current);       
+            bool has_checked_bigger = 0;
+            bool S_ij_changed = 0;
+            while(true){
 
-            S_test = S;
-            if (!has_checked_bigger){
-                S_test(i,j) = S(i,j) + delta;
-            } else{
-                S_test(i,j) = S(i,j) - delta;
-            }
+                T S_ij_current_point = S(i,j);
+                Eigen::Matrix<T,x_dim, x_dim> Riccati_current = Riccati<T,x_dim,u_dim>(S,A,B,R_inv,Q);
+                T objective_function_current = SumOfSquaresOfMatrixEntries<T,x_dim>(Riccati_current);       
 
-            Eigen::Matrix<T,x_dim, x_dim> Riccati_test = Riccati<T,x_dim,u_dim>(S_test,A,B,R_inv,Q);
-            T objective_function_test = SumOfSquaresOfMatrixEntries<T,x_dim>(Riccati_test);
-
-            if (printout){
-                std::cout << "i " << i << ", j " << j;
-                std::cout << "   S_ij_current " << S(i,j) << ", Sij_test " << S_test(i,j);
-                std::cout << "   obj current: " << objective_function_current << ", obj test: " << objective_function_test;
-            }
-
-            // found better solution 
-            if (objective_function_test < objective_function_current - epsilon){
-                S(i,j) = S_test(i,j);
-                if(printout){
-                    std::cout << std::endl << "   updating " << "i " << i << ", j "<<j << std::endl;
-                }
-                S_ij_changed = true;
-            } else{
+                S_test = S;
                 if (!has_checked_bigger){
-                    has_checked_bigger = true;
+                    S_test(i,j) = S(i,j) + delta;
+                } else{
+                    S_test(i,j) = S(i,j) - delta;
+                }
+
+                // keep positive semi definite
+                if (S_test(i,j) < 0){
+                    S_test(i,j) = 0;
+                }
+
+                Eigen::Matrix<T,x_dim, x_dim> Riccati_test = Riccati<T,x_dim,u_dim>(S_test,A,B,R_inv,Q);
+                T objective_function_test = SumOfSquaresOfMatrixEntries<T,x_dim>(Riccati_test);
+
+                if (printout){
+                    std::cout << "i " << i << ", j " << j;
+                    std::cout << "   S_ij_current " << S(i,j) << ", Sij_test " << S_test(i,j);
+                    std::cout << "   obj current: " << objective_function_current << ", obj test: " << objective_function_test;
+                }
+
+                // found better solution 
+                if (objective_function_test < objective_function_current - epsilon){
+                    S(i,j) = S_test(i,j);
                     if(printout){
-                        std::cout << "   done checking bigger";
+                        std::cout << std::endl << "   updating " << "i " << i << ", j "<<j << std::endl;
                     }
-                    
-                } else { //we've checked both bigger and smaller
-                    if (printout){
-                        std::cout << "   done checking both";
+                    S_ij_changed = true;
+                } else{
+                    if (!has_checked_bigger){
+                        has_checked_bigger = true;
+                        if(printout){
+                            std::cout << "   done checking bigger";
+                        }
+                        
+                    } else { //we've checked both bigger and smaller
+                        if (printout){
+                            std::cout << "   done checking both";
+                        }
+                        
+                        break;
                     }
-                    
+                }
+                if (printout){std::cout <<std::endl;}
+                
+            } 
+
+            if (S_ij_changed){
+                last_i_with_change = i;
+                last_j_with_change = j;
+            }
+
+            j = (j + 1) % x_dim;
+            if (j == last_j_with_change) {
+                i = (i + 1) % x_dim;
+                if (i == last_i_with_change){
+                    if(printout){
+                        std::cout << std::endl << " last i with change " << i << ", last j with change " << j << std::endl;
+                    }
                     break;
                 }
             }
-            if (printout){std::cout <<std::endl;}
-            
-        } 
 
-        if (S_ij_changed){
-            last_i_with_change = i;
-            last_j_with_change = j;
+            iteration_count++;
+            if (iteration_count == max_iterations){
+                std::cout << "reached max iterations " << std::endl;
+            }
+
+        } //individual solve
+
+        if (iteration_count > max_iterations){
+            break;
         }
 
-        j = (j + 1) % x_dim;
-        if (j == last_j_with_change) {
-            i = (i + 1) % x_dim;
-            if (i == last_i_with_change){
-                if(printout){
-                    std::cout << std::endl << " last i with change " << i << ", last j with change " << j << std::endl;
-                }
-                break;
+        // if any eigenvalues are < 0 , try again
+        Eigen::Vector<float, x_dim> eigenvalues = S.eigenvalues().real();
+        Ricc = Riccati<T,x_dim,u_dim>(S,A,B,R_inv,Q);
+        T objective = SumOfSquaresOfMatrixEntries<T,x_dim>(Ricc);
+
+        bool successful_guess = 1;
+        if (objective > epsilon){
+            successful_guess = 0;
+        }
+        for (int i = 0; i < x_dim; i ++){
+            if (eigenvalues(i) < 0){
+                successful_guess = 0;
             }
         }
+        if (successful_guess){
+            break;
+        }
 
-        iteration_count++;
-
+        initial_guess ++;
     }
 
     Ricc = Riccati<T,x_dim,u_dim>(S,A,B,R_inv,Q);
     K = R_inv*B_T*S;
 
-    return true;
+    return solution_found;
 }
