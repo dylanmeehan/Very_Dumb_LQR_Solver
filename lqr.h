@@ -53,23 +53,25 @@ bool LqrSolution::Solve( Eigen::Matrix<T, u_dim, x_dim> &K,
                         const Eigen::Matrix<T, u_dim, u_dim> &R,
                         float delta, float epsilon){
 
-    // initialize everything before loop
-    K.setOnes();
-    
+    // precalculate certain values
     Eigen::Matrix<T, u_dim, u_dim> R_inv = R.inverse();
     Eigen::Matrix<T, x_dim, x_dim> A_T = A.transpose();
     Eigen::Matrix<T, u_dim, x_dim> B_T = B.transpose();
 
-    int max_iterations = 100000;
+
     bool printout = 0;
-    int iteration_count = 0;    
+
     bool solution_found = 0;
     int initial_guess = 1;
     int max_guesses = 5;
 
-    while (initial_guess < max_guesses) { //
+    while (initial_guess < max_guesses) { // loop over multiple initial guesses of S
+
+        int max_iterations_per_loop = 10000;
+        int iteration_count = 0;
+
         S.setIdentity();
-        S = S*initial_guess; // [1 ... 5]
+        S = S*initial_guess; // try different guesses of S each loop
         
         int i = 0;
         int j = 0;
@@ -79,7 +81,7 @@ bool LqrSolution::Solve( Eigen::Matrix<T, u_dim, x_dim> &K,
 
         std::cout << "trying with S = " << S << std::endl;
 
-        while (iteration_count < max_iterations){
+        while (iteration_count < max_iterations_per_loop){ // gradient descent for 1 guess
 
             bool has_checked_bigger = 0;
             bool S_ij_changed = 0;
@@ -134,13 +136,14 @@ bool LqrSolution::Solve( Eigen::Matrix<T, u_dim, x_dim> &K,
                 }
                 if (printout){std::cout <<std::endl;}
                 
-            } 
+            } // try bigger and smaller S(i,j)
 
             if (S_ij_changed){
                 last_i_with_change = i;
                 last_j_with_change = j;
             }
 
+            // if we have looped over all entries in the matrix without changing S then break 
             j = (j + 1) % x_dim;
             if (j == last_j_with_change) {
                 i = (i + 1) % x_dim;
@@ -153,17 +156,13 @@ bool LqrSolution::Solve( Eigen::Matrix<T, u_dim, x_dim> &K,
             }
 
             iteration_count++;
-            if (iteration_count == max_iterations){
+            if (iteration_count == max_iterations_per_loop){
                 std::cout << "reached max iterations " << std::endl;
             }
 
-        } //individual solve
+        } // gradient descent for 1 guess
 
-        if (iteration_count > max_iterations){
-            break;
-        }
-
-        // if any eigenvalues are < 0 , try again
+        // if any eigenvalues are < 0 or we do not find a zero , note unsuccessful
         Eigen::Vector<float, x_dim> eigenvalues = S.eigenvalues().real();
         Ricc = Riccati<T,x_dim,u_dim>(S,A,B,R_inv,Q);
         T objective = SumOfSquaresOfMatrixEntries<T,x_dim>(Ricc);
@@ -182,7 +181,7 @@ bool LqrSolution::Solve( Eigen::Matrix<T, u_dim, x_dim> &K,
         }
 
         initial_guess ++;
-    }
+    } // loop over multiple initial guesses of S
 
     Ricc = Riccati<T,x_dim,u_dim>(S,A,B,R_inv,Q);
     K = R_inv*B_T*S;
